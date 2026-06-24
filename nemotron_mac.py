@@ -20,6 +20,19 @@ from pathlib import Path
 
 import numpy as np
 
+# ── Silenciar logs verbosos de NeMo ───────────────────────────────────────────
+import logging
+import warnings
+
+warnings.filterwarnings("ignore")
+logging.getLogger("nemo_logger").setLevel(logging.ERROR)
+logging.getLogger("nemo").setLevel(logging.ERROR)
+
+# Silenciar el logger específico de NeMo que imprime las configs de train/val/test
+for _name in logging.root.manager.loggerDict:
+    if "nemo" in _name.lower():
+        logging.getLogger(_name).setLevel(logging.ERROR)
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 
 MODEL_PATH = str(
@@ -93,12 +106,20 @@ def parse_output(raw_obj) -> tuple[str, str | None]:
 
 def load_model(chunk_ms: int):
     print("⏳ Cargando NeMo…")
+    import os
+    os.environ.setdefault("NEMO_TESTING", "1")  # suprime algunos prints extra
+
     try:
         import nemo.collections.asr as nemo_asr
     except ImportError:
         sys.exit("❌ pip install 'git+https://github.com/NVIDIA/NeMo.git@main#egg=nemo_toolkit[asr]'")
 
-    model = nemo_asr.models.ASRModel.restore_from(MODEL_PATH)
+    # NeMo registra sus loggers al importar → silenciarlos después del import
+    for _ln in list(logging.root.manager.loggerDict):
+        if any(x in _ln.lower() for x in ("nemo", "lightning", "pytorch_lightning")):
+            logging.getLogger(_ln).setLevel(logging.ERROR)
+
+    model = nemo_asr.models.ASRModel.restore_from(MODEL_PATH, map_location="cpu")
     model.eval()
 
     # Configurar chunk size
